@@ -57,7 +57,8 @@ func hasValidWebsite(websiteLink string) bool {
 		"facebook.com", "fb.com", "instagram.com", "twitter.com",
 		"linkedin.com", "tiktok.com", "youtube.com",
 		"facebook.co.uk", "fb.co.uk", "instagram.co.uk", "twitter.co.uk",
-		"linkedin.co.uk", "tiktok.co.uk", "youtube.co.uk",
+		"linkedin.co.uk", "tiktok.co.uk", "youtube.co.uk", "fresha.com",
+		"fresha.co.uk",
 	}
 
 	
