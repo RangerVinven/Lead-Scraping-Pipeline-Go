@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// The websites of all the leads whos been seen so far
-	// var seenLeadsWebsites = SafeSeenLeadsWebsites{}
+	var seenLeadsWebsites = SafeSeenLeadsWebsites{}
 	var allProcessedLeads = SafeAllProcessedLeads{}
 
 	fmt.Println("Splitting keywords into their own file...")
@@ -56,13 +56,13 @@ func main() {
 	// Loop over the files, calling the runPipeline function()
 	for _, keywordFile := range keywordFiles {
 		var scraperOutputFile = strings.Replace(keywordFile, ".txt", ".csv", -1)
-		// var pipelineOutputFile = strings.Replace(scraperOutputFile, "temp/", "temp/processedLeads/", -1)
+		var pipelineOutputFile = strings.Replace(scraperOutputFile, "temp/", "temp/processedLeads/", -1)
 
 		fmt.Println("Running scraper on", keywordFile + "...")
 		runScraper(keywordFile, scraperOutputFile)
 
 		fmt.Println("Running the pipeline", keywordFile + "...")
-		// runPipeline(scraperOutputFile, pipelineOutputFile, &seenLeadsWebsites, &allProcessedLeads)
+		runPipeline(scraperOutputFile, pipelineOutputFile, &seenLeadsWebsites, &allProcessedLeads)
 		fmt.Println("Finished the pipeline for", keywordFile + "!")
 	}
 
