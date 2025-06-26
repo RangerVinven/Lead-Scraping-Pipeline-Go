@@ -10,9 +10,11 @@ import (
 
 type Lead struct {
 	CompanyName string
-	PhoneNumber string
-	Website string
+	FirstName string
 	Email string
+	Website string
+	PhoneNumber string
+	Icebreaker string
 }
 
 func ReadCSV(fileName string) []Lead {

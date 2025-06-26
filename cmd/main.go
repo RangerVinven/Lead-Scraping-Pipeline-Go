@@ -2,18 +2,22 @@ package main
 
 import (
 	"Lead-Automation-Pipeline/cmd/utils"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-	"regexp"
 
-	"golang.org/x/net/html"
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/joho/godotenv"
+	"golang.org/x/net/html"
 )
 
 type SafeSeenLeadsWebsites struct {
@@ -21,11 +25,35 @@ type SafeSeenLeadsWebsites struct {
 	websites []string
 }
 
+type SafeAllProcessedLeads struct {
+	mu sync.Mutex
+	allProcessedLeads []utils.Lead
+}
+
 func main() {
-	// The websites of all the leads whos been seen so far
-	var seenLeadsWebsites = SafeSeenLeadsWebsites{}
+	godotenv.Load()
+
+	// Ensures the user passes in the queries file and the output file
+	var args = os.Args
+	if len(args) != 3 {
+		fmt.Errorf("Program must be run with the <queries.txt> and <output.csv> file")
+	}
+
+	// TODO:
+	// 1. Read the queries file, and split the keywords up into their own folder inside temp/ (and into an array)
+	// 2. Loop over those keywords, running the entire pipeline on each keyword/query
 
 	// Runs the google maps scraper
+	// cmd := exec.Command("google-maps-scraper", "-input", args[1], "-results", )
+	//
+	//            'google-maps-scraper',
+	//            '-input', kw_input_path,
+	//            '-results', raw_csv_path,
+	//            '-c', '3',
+	//            '-exit-on-inactivity', '3m'
+
+	// The websites of all the leads whos been seen so far
+	var seenLeadsWebsites = SafeSeenLeadsWebsites{}
 
 	// Reads the email, phone number, and website from the results
 	var leads = utils.ReadCSV("output.csv")
@@ -46,6 +74,7 @@ func main() {
 
 	// Splits the leads into chunks, one chunk per goroutine
 	var leadChunks = splitLeadsUp(leads, numOfGoroutines)
+	var allProcessedLeads = SafeAllProcessedLeads{}
 
 	// Starts a goroutine for each chunk
 	for _, chunk := range leadChunks {
@@ -57,17 +86,30 @@ func main() {
 			defer wg.Done()
 
 			for _, lead := range chunk {
-				processLead(lead, &seenLeadsWebsites, &client)
+				processedLead, err := processLead(lead, &seenLeadsWebsites, &client)
+				if err != nil {
+					fmt.Errorf("Error processing", lead.CompanyName, "Recieved Error:", err)
+					continue
+				} 
+
+				if processedLead.Email != "" {
+					allProcessedLeads.mu.Lock()
+					allProcessedLeads.allProcessedLeads = append(allProcessedLeads.allProcessedLeads, processedLead)
+					allProcessedLeads.mu.Unlock()
+				}
 			}
 		}(chunk)
 	}
 
 	wg.Wait()
 
+	fmt.Println("Saving results to the CSV...")
 	// Saves the final results in the output file specified by the user
+	saveToCSVFile(allProcessedLeads.allProcessedLeads, "program-output.csv")
+	fmt.Println("Complete!")
 }
 
-func processLead(lead utils.Lead, seenLeadsWebsites *SafeSeenLeadsWebsites, client *http.Client) {
+func processLead(lead utils.Lead, seenLeadsWebsites *SafeSeenLeadsWebsites, client *http.Client) (utils.Lead, error) {
 	fmt.Println("Getting the emails and markdown for:", lead.CompanyName)
 	// Scrapes the website for emails, and copies the HTML
 
@@ -80,20 +122,26 @@ func processLead(lead utils.Lead, seenLeadsWebsites *SafeSeenLeadsWebsites, clie
 
 	if len(emails) == 0 {
 		fmt.Println("Found no emails for:", lead.CompanyName)
-		return
+		return utils.Lead{}, nil
 	}
 
 	lead.Email = emails[0]
-	markdown = markdown
 
-	// Calls OpenAI to write a summarisation of the website's content
+	// Calls OpenAI to write a summarisation of each of the websites' pages
+	println("Generating abstracts for", lead.CompanyName)
+	var abstracts = utils.GenerateAbstracts(markdown)
 
+	println("Generating an icebreaker for", lead.CompanyName)
 	// Calls OpenAI to write an email icebreaker
+	var icebreaker = utils.GenerateIcebreaker(abstracts)
+	lead.Icebreaker = icebreaker
 
 	// Save the email to the array used to check if a lead has been scraped before
 	seenLeadsWebsites.mu.Lock()
 	seenLeadsWebsites.websites = append(seenLeadsWebsites.websites, lead.Website)
 	seenLeadsWebsites.mu.Unlock()
+
+	return lead, nil
 }
 
 // Splits the lead array up into multiple chunks
@@ -289,9 +337,30 @@ func isDomainFromCommonProvider(email string) bool {
 			return true
 		}
 
-		// fmt.Println("%w is not in %w", provider, email)
 	}
 
 	return false
 }
 
+func saveToCSVFile(processedLeads []utils.Lead, outputFileName string) error {
+	file, err := os.Create(outputFileName)
+	if err != nil {
+		fmt.Errorf("Couldn't create output file. Recieved error:", err)
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Writes the headers
+	writer.Write([]string{"Company Name", "First Name", "Email", "Website", "Phone Number", "Icebreaker"})
+
+	// Writes each lead as a row
+	for _, lead := range processedLeads {
+		var row = []string{lead.CompanyName, lead.FirstName, lead.Email, lead.Website, lead.PhoneNumber, lead.Icebreaker}
+		writer.Write(row)
+	}
+
+	return nil
+}
