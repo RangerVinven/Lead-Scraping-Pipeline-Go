@@ -30,7 +30,12 @@ func ReadCSV(fileName string) []Lead {
 		log.Fatal("Couldn't parse the output.csv file. Recieved error: %w", err)
 	}
 
-	return slices.Delete(getRequiredColumns(records), 0, 1) // Deletes the header
+	leads := getRequiredColumns(records)
+	if len(leads) == 0 {
+		return leads
+	}
+	
+	return slices.Delete(leads, 0, 1) // Deletes the header
 }
 
 // Gets the company's name, phone number, and website (only returns results with websites)
@@ -52,7 +57,7 @@ func getRequiredColumns(scraperResults [][]string) []Lead {
 }
 
 func hasValidWebsite(websiteLink string) bool {
-	if websiteLink == "" {
+	if websiteLink == "{}" {
 		return false
 	}
 
@@ -72,4 +77,50 @@ func hasValidWebsite(websiteLink string) bool {
 	}
 
 	return true
+}
+
+// In package utils
+
+// LoadWebsitesFromRecoveryCSV reads a CSV file and returns a slice containing
+// the data from the 4th column (index 3), which is expected to be the website URL.
+func LoadWebsitesFromRecoveryCSV(fileName string) ([]string, error) {
+	// Attempt to open the specified recovery file.
+	file, err := os.Open(fileName)
+	if err != nil {
+		// If the file simply doesn't exist, it's not an error.
+		// It just means we have no state to recover, so we return an empty slice.
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		// For any other error (e.g., permissions), return the error.
+		return nil, err
+	}
+	defer file.Close()
+
+	// Read all the records from the CSV.
+	csvReader := csv.NewReader(file)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var websites []string
+	if len(records) < 2 {
+		// If the file is empty or only has a header, there's nothing to load.
+		return websites, nil
+	}
+
+	// Loop over the records, skipping the header row (index 0).
+	for _, record := range records[1:] {
+		// Ensure the row has enough columns to prevent a crash. The 4th column is index 3.
+		if len(record) > 3 {
+			website := record[3]
+			// Add the website to our slice, as long as it's not an empty string.
+			if website != "" {
+				websites = append(websites, website)
+			}
+		}
+	}
+
+	return websites, nil
 }
