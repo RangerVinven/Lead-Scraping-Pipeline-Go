@@ -111,7 +111,7 @@ func main() {
 		fmt.Println("Failed to create the temp directory. Received error:", err)
 	}
 
-	scraperOutputFileName := "temp/temp_scraper_results.csv"
+	scraperOutputFileName := fmt.Sprintf("temp/temp_scraper_results_%d.csv", time.Now().Unix())
 
 	fmt.Println("Running scraper on queries from:", queriesFileName)
 	err = runScraper(queriesFileName, scraperOutputFileName)
@@ -203,7 +203,7 @@ func processLead(lead utils.Lead, seenLeadsWebsites *SafeSeenLeadsWebsites, clie
 
 	emails, markdown, err := getEmailsAndMarkdown(lead.Website, client)
 	if err != nil {
-		fmt.Println("Error getting the emails and markdown. Recieved error: %w", err)
+		fmt.Println("Error getting the emails and markdown. Recieved error:", err)
 	}
 
 	if len(emails) == 0 {
@@ -266,7 +266,7 @@ func getEmailsAndMarkdown(website string, client *http.Client) ([]string, []stri
 	// Gets the homepage's HTML
 	var homepageHTML, err = getWebsiteHTML(website, client)
 	if err != nil {
-		fmt.Errorf("Failed to get homepage's HTML: %w", err)
+		fmt.Println("Failed to get homepage's HTML:", err)
 	}
 
 	emails = append(emails, getEmailsFromHTML(homepageHTML, website)...)
@@ -275,12 +275,12 @@ func getEmailsAndMarkdown(website string, client *http.Client) ([]string, []stri
 	// Gets 10 internal links from the website (exluding blog and post pages)
 	links, err := getInternalLinks(website, homepageHTML)
 	if err != err {
-		fmt.Errorf("Failed to get internal links: %w", err)
+		fmt.Println("Failed to get internal links:", err)
 	}
 
 	for _, link := range links {
 		var pageHTML, err = getWebsiteHTML(link, client); if err != nil {
-			fmt.Errorf("Failed to get page to %w. Recieved error: %w", link, err)
+			fmt.Printf("Failed to get page to %s. Recieved error: %v\n", link, err)
 		}
 
 		emails = append(emails, getEmailsFromHTML(pageHTML, link)...)
@@ -317,7 +317,7 @@ func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) 
 
 	baseURL, err := url.Parse(homepageURL)
 	if err != nil {
-		fmt.Errorf("Invalid base URL: %w", err)
+		fmt.Println("Invalid base URL:", err)
 	}
 
 	doc, err := html.Parse(strings.NewReader(htmlContent))
@@ -367,7 +367,7 @@ func getEmailsFromHTML(html string, websiteURL string) []string {
 	
 	baseURL, err := url.Parse(websiteURL)
 	if err != nil {
-		fmt.Errorf("Invalid base URL: %w", err)
+		fmt.Println("Invalid base URL:", err)
 	}
 
 	var domain = baseURL.Hostname()
@@ -397,7 +397,7 @@ func getEmailsFromHTML(html string, websiteURL string) []string {
 func convertHTMLToMarkdown(html string) string {
 	markdown,err := htmltomarkdown.ConvertString(html)
 	if err != nil {
-		fmt.Errorf("Couldn't convert HTML to markdown. Recieved error: %w", err)
+		fmt.Println("Couldn't convert HTML to markdown. Recieved error:", err)
 	}
 
 	// Limits the markdown to 10,000 characters to not use too many tokens
@@ -429,7 +429,7 @@ func isDomainFromCommonProvider(email string) bool {
 func saveToCSVFile(processedLeads []utils.Lead, outputFileName string) error {
 	file, err := os.Create(outputFileName)
 	if err != nil {
-		fmt.Errorf("Couldn't create output file. Recieved error:", err)
+		fmt.Println("Couldn't create output file. Recieved error:", err)
 		return err
 	}
 	defer file.Close()
@@ -456,12 +456,12 @@ func splitKeywordsUp(keywordsFileName string) []string {
 
 	err := os.Mkdir("temp", 0755)
 	if err != nil {
-		fmt.Errorf("Failed to create the temp directory. Recieved error:", err)
+		fmt.Println("Failed to create the temp directory. Recieved error:", err)
 	}
 
 	file, err := os.Open(keywordsFileName)
 	if err != nil {
-		fmt.Errorf("Failed to keywords file. Recieved error:", err)
+		fmt.Println("Failed to keywords file. Recieved error:", err)
 	}
 	defer file.Close()
 
@@ -474,7 +474,7 @@ func splitKeywordsUp(keywordsFileName string) []string {
 
 		err := os.WriteFile(filename, []byte(line), 0644)
 		if err != nil {
-			fmt.Printf("Failed to create keyword file", filename + ". Recieved error:", err)
+			fmt.Println("Failed to create keyword file", filename + ". Recieved error:", err)
 			continue
 		}
 
@@ -482,7 +482,7 @@ func splitKeywordsUp(keywordsFileName string) []string {
 	}
 	
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error when reading keywords file. Recieved error:", err)
+		fmt.Println("Error when reading keywords file. Recieved error:", err)
 	}
 
 	return fileNames
@@ -595,7 +595,7 @@ func runPipeline(keywordFileName string, outputFileName string, seenLeadsWebsite
 			for _, lead := range chunk {
 				processedLead, err := processLead(lead, seenLeadsWebsites, &client)
 				if err != nil {
-					fmt.Errorf("Error processing", lead.CompanyName, "Recieved Error:", err)
+					fmt.Println("Error processing", lead.CompanyName, "Recieved Error:", err)
 					continue
 				} 
 
