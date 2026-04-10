@@ -318,17 +318,22 @@ func getWebsiteHTML(reqURL string, client *http.Client) (string, error) {
 }
 
 func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) {
-	var links = []string{}
+	var priorityLinks []string
+	var otherLinks []string
 
 	baseURL, err := url.Parse(homepageURL)
 	if err != nil {
 		fmt.Println("Invalid base URL:", err)
+		return nil, err
 	}
 
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		return nil, fmt.Errorf("HTML parse error: %w", err)
 	}
+
+	// Keywords to prioritize (Contact, About, Team info usually has the best emails/story)
+	priorityKeywords := []string{"contact", "about", "team", "staff", "story", "services", "legal", "privacy"}
 
 	// Traverses the HTML
 	var traverse func(*html.Node)
@@ -348,23 +353,49 @@ func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) 
 
 					resolved := baseURL.ResolveReference(parsed)
 
+					// Only collect links from the same domain
 					if resolved.Host == baseURL.Host {
-						links = append(links, resolved.String())
+						link := resolved.String()
+						linkLower := strings.ToLower(link)
+
+						// Skip duplicates
+						if slices.Contains(priorityLinks, link) || slices.Contains(otherLinks, link) || link == homepageURL || link == homepageURL+"/" {
+							continue
+						}
+
+						// Check if it's a priority link
+						isPriority := false
+						for _, keyword := range priorityKeywords {
+							if strings.Contains(linkLower, keyword) {
+								isPriority = true
+								break
+							}
+						}
+
+						if isPriority {
+							priorityLinks = append(priorityLinks, link)
+						} else {
+							otherLinks = append(otherLinks, link)
+						}
 					}
 				}
 			}
 		}
 
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			if len(links) <= 10 {
-				traverse(child)
-			} else {
-				break
-			}
+			traverse(child)
 		}
 	}
 	traverse(doc)
-	return links, nil
+
+	// Combine them, putting priority links first
+	allLinks := append(priorityLinks, otherLinks...)
+
+	// Limit to the first 10 unique links
+	if len(allLinks) > 10 {
+		return allLinks[:10], nil
+	}
+	return allLinks, nil
 }
 
 func getEmailsFromHTML(htmlStr string, websiteURL string) []string {
