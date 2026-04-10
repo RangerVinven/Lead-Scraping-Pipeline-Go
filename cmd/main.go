@@ -333,7 +333,11 @@ func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) 
 	}
 
 	// Keywords to prioritize (Contact, About, Team info usually has the best emails/story)
-	priorityKeywords := []string{"contact", "about", "team", "staff", "story", "services", "legal", "privacy"}
+	priorityKeywords := []string{"contact", "about", "team", "staff", "story", "services", "legal", "privacy", "home"}
+
+	// Determine the root homepage to compare against
+	rootURL := baseURL.Scheme + "://" + baseURL.Host
+	rootURLWithSlash := rootURL + "/"
 
 	// Traverses the HTML
 	var traverse func(*html.Node)
@@ -358,17 +362,27 @@ func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) 
 						link := resolved.String()
 						linkLower := strings.ToLower(link)
 
-						// Skip duplicates
-						if slices.Contains(priorityLinks, link) || slices.Contains(otherLinks, link) || link == homepageURL || link == homepageURL+"/" {
+						// Skip if it's the EXACT page we are currently on
+						if link == homepageURL || link == homepageURL+"/" {
+							continue
+						}
+
+						// Skip duplicates already in our lists
+						if slices.Contains(priorityLinks, link) || slices.Contains(otherLinks, link) {
 							continue
 						}
 
 						// Check if it's a priority link
 						isPriority := false
-						for _, keyword := range priorityKeywords {
-							if strings.Contains(linkLower, keyword) {
-								isPriority = true
-								break
+						// If this link points to the root homepage and our starting URL wasn't the root, prioritize it
+						if (link == rootURL || link == rootURLWithSlash) && (homepageURL != rootURL && homepageURL != rootURLWithSlash) {
+							isPriority = true
+						} else {
+							for _, keyword := range priorityKeywords {
+								if strings.Contains(linkLower, keyword) {
+									isPriority = true
+									break
+								}
 							}
 						}
 
