@@ -212,7 +212,7 @@ func processLead(lead utils.Lead, seenLeadsWebsites *SafeSeenLeadsWebsites, clie
 	}
 
 	fmt.Println("Got the emails and markdown for", lead.CompanyName)
-	lead.Email = emails[0]
+	lead.Email = getBestEmail(emails, lead.Website, lead.CompanyName)
 
 	// Calls OpenAI to write a summarisation of each of the websites' pages
 	println("Generating abstracts for", lead.CompanyName)
@@ -274,7 +274,7 @@ func getEmailsAndMarkdown(website string, client *http.Client) ([]string, []stri
 
 	// Gets 10 internal links from the website (exluding blog and post pages)
 	links, err := getInternalLinks(website, homepageHTML)
-	if err != err {
+	if err != nil {
 		fmt.Println("Failed to get internal links:", err)
 	}
 
@@ -290,18 +290,23 @@ func getEmailsAndMarkdown(website string, client *http.Client) ([]string, []stri
 	return emails, markdown, nil
 }
 
-func getWebsiteHTML(url string, client *http.Client) (string, error) {
+func getWebsiteHTML(reqURL string, client *http.Client) (string, error) {
 	// Sends the response to the website
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("Failed to create request: %w", err)
+	}
+	// Add a common User-Agent to avoid being blocked by simple anti-bot measures
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make request: %w", err)
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Non 200 HTTP Response: %w", err)
-	}
+	// We no longer strictly check the status code because many sites return 
+	// 403 Forbidden or 202 Accepted but still serve the HTML content we need.
 
 	// Gets the HTML from the response
 	bodyBytes, err := io.ReadAll(resp.Body)
@@ -362,36 +367,78 @@ func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) 
 	return links, nil
 }
 
-func getEmailsFromHTML(html string, websiteURL string) []string {
-	var emailRegex = `[a-z0-9.\-+]+@[a-z0-9.\-+]+\.[a-z]+`
-	
-	baseURL, err := url.Parse(websiteURL)
-	if err != nil {
-		fmt.Println("Invalid base URL:", err)
-	}
+func getEmailsFromHTML(htmlStr string, websiteURL string) []string {
+	var emailRegex = `[a-zA-Z0-9.\-+]+@[a-zA-Z0-9.\-+]+\.[a-zA-Z]+`
 
-	var domain = baseURL.Hostname()
-
-	// Finds the emails
 	re := regexp.MustCompile(emailRegex)
-	matches := re.FindAllString(html, -1)
+	matches := re.FindAllString(htmlStr, -1)
 
-	// Removes duplicates
 	unique := make(map[string]bool)
 	var result []string
 
 	for _, email := range matches {
+		email = strings.ToLower(email)
+		// Filter out file extensions that match the email regex
+		if strings.HasSuffix(email, ".png") || strings.HasSuffix(email, ".jpg") || strings.HasSuffix(email, ".jpeg") || strings.HasSuffix(email, ".gif") || strings.HasSuffix(email, ".webp") || strings.HasSuffix(email, ".svg") {
+			continue
+		}
+		// Filter out common web development or internal tools emails
+		if strings.Contains(email, "sentry") || strings.HasPrefix(email, "no-reply") || strings.HasPrefix(email, "noreply") {
+			continue
+		}
+
 		if !unique[email] {
 			unique[email] = true
+			result = append(result, email)
+		}
+	}
+	return result
+}
 
-			// Ensures the email is either using the domain, or is part of a common mail provider
-			if strings.Contains(email, strings.Trim(domain, "www.")) || isDomainFromCommonProvider(email) {
-				result = append(result, email)
+func getBestEmail(emails []string, websiteURL string, companyName string) string {
+	if len(emails) == 0 {
+		return ""
+	}
+
+	baseURL, err := url.Parse(websiteURL)
+	domain := ""
+	if err == nil && baseURL != nil {
+		domain = baseURL.Hostname()
+	}
+	domainWithoutWWW := strings.TrimPrefix(domain, "www.")
+	baseName := strings.Split(domainWithoutWWW, ".")[0]
+
+	companyNameLower := strings.ToLower(companyName)
+	companyWords := strings.Fields(companyNameLower)
+
+	// 1. Prioritize emails that match the domain
+	for _, email := range emails {
+		if domainWithoutWWW != "" && strings.Contains(email, domainWithoutWWW) {
+			return email
+		}
+		if baseName != "" && strings.Contains(email, baseName) {
+			return email
+		}
+	}
+
+	// 2. Prioritize emails that contain a significant word from the company name
+	for _, email := range emails {
+		for _, word := range companyWords {
+			if len(word) > 3 && strings.Contains(email, word) {
+				return email
 			}
 		}
 	}
 
-	return result
+	// 3. Prioritize common mail providers (gmail, yahoo, etc.)
+	for _, email := range emails {
+		if isDomainFromCommonProvider(email) {
+			return email
+		}
+	}
+
+	// 4. If none of the above match, just return the first email found
+	return emails[0]
 }
 
 func convertHTMLToMarkdown(html string) string {
