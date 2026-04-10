@@ -16,11 +16,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"context"
 
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/chromedp/chromedp"
 	"github.com/joho/godotenv"
 	"golang.org/x/net/html"
 )
+
+// Limit the number of concurrent headless browser instances to avoid crashing the system
+var headlessSemaphore = make(chan struct{}, 3)
 
 type SafeSeenLeadsWebsites struct {
 	mu sync.Mutex
@@ -291,7 +296,7 @@ func getEmailsAndMarkdown(website string, client *http.Client) ([]string, []stri
 }
 
 func getWebsiteHTML(reqURL string, client *http.Client) (string, error) {
-	// Sends the response to the website
+	// 1. Try the "Fast" mode (direct HTTP request)
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("Failed to create request: %w", err)
@@ -300,21 +305,62 @@ func getWebsiteHTML(reqURL string, client *http.Client) (string, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
 	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("Failed to make request: %w", err)
+	
+	isJSOnly := false
+	var bodyBytes []byte
+	if err == nil {
+		defer resp.Body.Close()
+		bodyBytes, _ = io.ReadAll(resp.Body)
+		html := string(bodyBytes)
+		
+		// If the page is too small, or contains common JS-only signatures, we might need a browser
+		if len(html) < 1500 || strings.Contains(html, "<div id=\"app\">") || strings.Contains(html, "<div id=\"root\">") || (strings.Contains(html, "javascript") && !strings.Contains(html, "<body")) {
+			isJSOnly = true
+		}
 	}
-	defer resp.Body.Close()
 
-	// We no longer strictly check the status code because many sites return 
-	// 403 Forbidden or 202 Accepted but still serve the HTML content we need.
-
-	// Gets the HTML from the response
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("Failed to read response to body: %w", err)
+	// 2. Fallback to "Headless" mode if Fast mode failed or returned an empty/JS-only page
+	if err != nil || isJSOnly {
+		headlessHTML, headlessErr := getWebsiteHTMLHeadless(reqURL)
+		if headlessErr == nil {
+			return headlessHTML, nil
+		}
+		// If both fail, return the original error from Fast mode (or headless error if Fast mode didn't even have one)
+		if err != nil {
+			return "", err
+		}
+		return string(bodyBytes), nil // Return what we got from Fast mode even if it was short
 	}
 
 	return string(bodyBytes), nil
+}
+
+func getWebsiteHTMLHeadless(reqURL string) (string, error) {
+	// Acquire semaphore
+	headlessSemaphore <- struct{}{}
+	defer func() { <-headlessSemaphore }()
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Create chrome instance
+	ctx, cancel = chromedp.NewContext(ctx)
+	defer cancel()
+
+	var html string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(reqURL),
+		// Wait for body to be visible or a short sleep to allow JS to run
+		chromedp.Sleep(3*time.Second),
+		chromedp.OuterHTML("html", &html),
+	)
+
+	if err != nil {
+		return "", err
+	}
+
+	return html, nil
 }
 
 func getInternalLinks(homepageURL string, htmlContent string) ([]string, error) {
