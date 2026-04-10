@@ -62,11 +62,33 @@ func hasValidWebsite(websiteLink string) bool {
 	}
 
 	var invalid_domains = []string{
-		"facebook.com", "fb.com", "instagram.com", "twitter.com",
-		"linkedin.com", "tiktok.com", "youtube.com",
+		// Social Media
+		"facebook.com", "fb.com", "instagram.com", "twitter.com", "x.com",
+		"linkedin.com", "tiktok.com", "youtube.com", "pinterest.com",
 		"facebook.co.uk", "fb.co.uk", "instagram.co.uk", "twitter.co.uk",
-		"linkedin.co.uk", "tiktok.co.uk", "youtube.co.uk", "fresha.com",
-		"fresha.co.uk",
+		"linkedin.co.uk", "tiktok.co.uk", "youtube.co.uk",
+
+		// Major Business Directories
+		"yell.com", "yelp.com", "yelp.co.uk", "thomsonlocal.com",
+		"cylex-uk.co.uk", "cylex.com", "192.com", "freeindex.co.uk",
+		"scoot.co.uk", "centralindex.com", "businessmagnet.co.uk",
+		"lacartes.com", "showmelocal.com", "brownbook.net",
+		"hotfrog.co.uk", "hotfrog.com", "europages.co.uk",
+		"kompass.com", "bark.com", "gumtree.com", "misterwhat.co.uk",
+		"approvedbusiness.co.uk", "finder.com", "localdatacompany.com",
+		"near.co.uk", "118118.com", "localstore.co.uk", "allbiz.co.uk",
+		"nearest.com", "local-life.co.uk",
+
+		// Trade/Niche Directories
+		"checkatrade.com", "trustatrader.com", "mybuilder.com",
+		"ratedpeople.com", "houzz.co.uk", "houzz.com", "directory.thesun.co.uk",
+		"directory.independent.co.uk", "directory.mirror.co.uk",
+
+		// Booking/Review Portals
+		"fresha.com", "fresha.co.uk", "phorest.com", "treatwell.co.uk",
+		"tripadvisor.com", "tripadvisor.co.uk", "booking.com", "expedia.co.uk",
+		"zomato.com", "just-eat.co.uk", "deliveroo.co.uk", "ubereats.com",
+		"opentable.co.uk",
 	}
 
 	
